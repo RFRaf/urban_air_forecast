@@ -16,26 +16,29 @@ targets <- targets %>%
   mutate(datetime = as.POSIXct(datetime, tz = "GMT")) %>%
   arrange(site_id, variable, datetime)
 
-# Visualization only draws a 60-day-window. Is it better?
+# Take the latest time in the targets data as the end of the window 
+# to avoid an empty table due to data not being updated)
 window_days <- 60  
+end_dt <- max(targets$datetime, na.rm = TRUE)
+start_dt <- end_dt - lubridate::days(window_days)
 
 targets_recent <- targets %>%
   filter(duration == "P1D") %>%
   mutate(datetime = as.POSIXct(datetime, tz = "GMT")) %>%
-  filter(datetime >= as.POSIXct(Sys.Date() - window_days, tz = "GMT"))
+  filter(datetime >= start_dt, datetime <= end_dt)
 
 # get met drivers
 site_meta <- download_site_meta()
 
-met <- download_met_drivers(site_meta, past_days = 60)  # 最近60天气象作为输入变量示例
+met <- download_met_drivers(site_meta, past_days = 60)
 
 # visualization - target time series
 p_targets <- targets_recent %>%
   ggplot(aes(x = datetime, y = observation, group = site_id)) +
   geom_line(alpha = 0.6) +
   facet_grid(variable ~ site_id, scales = "free_y") +
-  labs(title = "Urban air quality targets (last 60 days)",
-       subtitle = paste("Generated:", format(Sys.time(), tz="GMT")),
+  labs(title = sprintf("Urban air quality targets (last %d days)", window_days),
+       subtitle = paste0("Data through: ", as.Date(end_dt), " | Generated: ", format(Sys.time(), tz="GMT")),
        x = "Datetime (GMT)", y = "Observation")
 
 ggsave(
