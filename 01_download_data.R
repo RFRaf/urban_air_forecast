@@ -105,6 +105,30 @@ viz_drivers_time_series <- function(targets) {
   ggsave("outputs/milestone3_drivers_timeseries.png", p_met, width = 14, height = 8)
 }
 
+# Visualize average drivers over time
+# @return visualization in .png
+viz_avg_drivers_time_series <- function(met) {
+  met_avg <- met %>%
+    group_by(date, variable) %>%
+    summarise(value = mean(value, na.rm = TRUE),
+              .groups = "drop")
+  p_met <- met_avg %>%
+    ggplot(aes(x = date, y = value)) +
+    geom_line(alpha = 0.8) +
+    facet_wrap(~ variable, scales = "free_y") +
+    labs(
+      title = "Average meteorological drivers over time",
+      x = "Date (GMT)", y = "Mean value") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+  
+  ggsave("outputs/milestone3_drivers_avg_timeseries.png", p_met, width = 14, height = 8)
+}
+
+
+
+
+
+
 # ##' append historical meteorological data into target file
 # ##' @param target targets dataframe
 # ##' @return updated targets dataframe with added weather data

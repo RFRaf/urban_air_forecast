@@ -65,4 +65,6 @@ viz_target_time_series(targets, window_days, start_dt, end_dt)
 # visualization - drivers time series
 viz_drivers_time_series(targets)
 
+#visualization - avergae time series
+viz_avg_drivers_time_series
 message("Milestone 3 plots saved to outputs/.")
