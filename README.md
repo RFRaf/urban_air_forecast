@@ -1,4 +1,4 @@
-# neon4cast-example
+# BU Urban Team Spring 2026
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=563603613)
 
@@ -47,6 +47,19 @@ A video describing how to use GitHub actions for automated forecast generation c
 You can run this repo as a "binder".  The [mybinder.org](https://mybinder.org) project will convert the repository into an interactive Rstudio sesson for you. To create a binder.  Use the link below but replace "eco4cast/neon4cast-example.git" with your repository. This is the exact R configuration that GitHub will be using to run your forecast.  The use of mybinder is primarily for testing. 
 
 https://mybinder.org/v2/gh/eco4cast/neon4cast-example.git/HEAD?urlpath=rstudio
+
+## BU Urban Team Spring 2026 EE 585 Milestones
+
+Updates on milestones and the scripts to run will be written here.
+
+**Milestone 1**: Project selection
+--completed--
+
+**Milestone 2**: Contact information
+--completed--
+
+**Milestone 3**
+Run Main_milestone3.R
 
 ## Contacts
 Emily Kim: ekim7@bu.edu\
