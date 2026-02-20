@@ -52,13 +52,13 @@ https://mybinder.org/v2/gh/eco4cast/neon4cast-example.git/HEAD?urlpath=rstudio
 
 Updates on milestones and the scripts to run will be written here.
 
-**Milestone 1**: Project selection
+**Milestone 1**: Project selection\
 --completed--
 
-**Milestone 2**: Contact information
+**Milestone 2**: Contact information\
 --completed--
 
-**Milestone 3**
+**Milestone 3**: Data download and visualization\
 Run Main_milestone3.R
 
 ## Contacts
