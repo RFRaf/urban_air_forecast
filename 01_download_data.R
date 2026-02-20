@@ -1,11 +1,20 @@
 ##' Download Targets
 ##' @return data.frame in long format with days as rows, and time, site_id, variable, and observed as columns
-download_targets <- function(){
+download_targets <- function(start_dt, end_dt){
   url <- Sys.getenv(
     "URBAN_TARGETS_URL",
     "https://minio-s3.apps.shift.nerc.mghpcc.org/bu4cast-ci-read/challenges/targets/project_id=bu4cast/urban-targets.csv"
   )
-  readr::read_csv(url, col_types = cols())
+  targets <- readr::read_csv(url, col_types = cols())
+  
+  # Daily targets only - only includes variables PM2.5 and PM10
+  targets_recent <- targets %>%
+    subset(select = -c(project_id)) %>%
+    filter(duration == "P1D") %>%
+    mutate(datetime = as.POSIXct(datetime, tz = "GMT")) %>%
+    filter(datetime >= start_dt, datetime <= end_dt)
+  
+  return(targets_recent)
 }
 
 ##' Download Site metadata
@@ -20,7 +29,7 @@ download_site_meta <- function(){
 
 ##' Download met drivers
 ##' @return metadata dataframe
-download_met_drivers <- function(site_meta, past_days = 60) {
+download_met_drivers <- function(site_meta, past_days) {
   
   # get lat/long
   lat_col <- intersect(names(site_meta), "site_lat")
@@ -28,7 +37,7 @@ download_met_drivers <- function(site_meta, past_days = 60) {
 
   lat_col <- lat_col[1]; lon_col <- lon_col[1]
   
-  # take a few sites to do mielstone3
+  # take a few sites to do milestone 3
   sites_keep <- unique(site_meta$site_id)[1:min(10, n_distinct(site_meta$site_id))]
   site_meta <- site_meta %>% filter(site_id %in% sites_keep)
   
@@ -63,6 +72,37 @@ download_met_drivers <- function(site_meta, past_days = 60) {
   })
   
   out
+}
+
+##' Visualize target time series data
+##' @return visualizations in .png
+viz_target_time_series <- function(targets, window_days, start_dt, end_dt) {
+  p_targets <- targets %>%
+    ggplot(aes(x = datetime, y = observation, group = site_id)) +
+    geom_line(alpha = 0.6) +
+    facet_grid(variable ~ site_id, scales = "free_y") +
+    labs(title = sprintf("Urban air quality targets (last %d days)", window_days),
+         subtitle = paste0("Data through: ", as.Date(end_dt), " | Generated: ", format(Sys.time(), tz="GMT")),
+         x = "Datetime (GMT)", y = "Observation")
+  
+  ggsave(
+    sprintf("outputs/milestone3_targets_last%dd_%s.png", window_days, Sys.Date()),
+    p_targets, width = 14, height = 10
+  )
+}
+
+##' Visualize drivers time series data
+##' @return visualizations in .png
+viz_drivers_time_series <- function(targets) {
+  p_met <- met %>%
+    ggplot(aes(x = date, y = value, group = site_id)) +
+    geom_line(alpha = 0.6) +
+    facet_grid(variable ~ site_id, scales = "free_y") +
+    labs(title = "Urban meteorological drivers (inputs, example)",
+         x = "Date (GMT)", y = "Value") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+  
+  ggsave("outputs/milestone3_drivers_timeseries.png", p_met, width = 14, height = 8)
 }
 
 # ##' append historical meteorological data into target file

@@ -1,59 +1,68 @@
-# Main.R  (Urban air quality - Milestone 3)
+### Urban air quality forecast workflow ###
+# Main.R (Updated for Milestone 3)
+
+## Load required libraries
 library(tidyverse)
 library(lubridate)
 
-source("01_download_data.R")
+## Load required functions
+if (file.exists("01_download_data.R")) source("01_download_data.R")
 
+## Set up directory
 dir.create("outputs", showWarnings = FALSE)
 
-# get urban targets
-targets <- download_targets()
+## Step 0: Define team name and team members
+team_info <- list(
+  team_name = "BUSp2026_urban",
+  team_list = list(list(
+    individualName = list(
+      givenName = "Nik",
+      surName = "Bates-Haus"
+    ),
+    organizationName = "Boston University",
+    electronicMailAddress = "nikbh@bu.edu"
+  ),
+  list(
+    individualName = list(
+      givenName = "Emily",
+      surName = "Kim"
+    ),
+    organizationName = "Boston University",
+    electronicMailAddress = "ekim7@bu.edu"
+  ),
+  list(
+    individualName = list(
+      givenName = "Radiya",
+      surName = "Rafat"
+    ),
+    organizationName = "Boston University",
+    electronicMailAddress = "rrafat@bu.edu"
+  ),
+  list(
+    individualName = list(
+      givenName = "Yinghao",
+      surName = "Sun"
+    ),
+    organizationName = "Boston University",
+    electronicMailAddress = "sunyh@bu.edu"
+  ))
+)
 
-# Daily only
-targets <- targets %>% filter(duration == "P1D")
-
-targets <- targets %>%
-  mutate(datetime = as.POSIXct(datetime, tz = "GMT")) %>%
-  arrange(site_id, variable, datetime)
-
+## Step 1: Get data
 # Take the latest time in the targets data as the end of the window 
-# to avoid an empty table due to data not being updated)
-window_days <- 60  
+# to avoid an empty table due to data not being updated
+window_days <- 60 # Only 60 days for easy visualization
 end_dt <- max(targets$datetime, na.rm = TRUE)
 start_dt <- end_dt - lubridate::days(window_days)
 
-targets_recent <- targets %>%
-  filter(duration == "P1D") %>%
-  mutate(datetime = as.POSIXct(datetime, tz = "GMT")) %>%
-  filter(datetime >= start_dt, datetime <= end_dt)
-
-# get met drivers
+targets <- download_targets(start_dt, end_dt)
 site_meta <- download_site_meta()
-met <- download_met_drivers(site_meta, past_days = 60) 
-
+met <- download_met_drivers(site_meta, past_days = 60)
 
 # visualization - target time series
-p_targets <- targets_recent %>%
-  ggplot(aes(x = datetime, y = observation, group = site_id)) +
-  geom_line(alpha = 0.6) +
-  facet_grid(variable ~ site_id, scales = "free_y") +
-  labs(title = sprintf("Urban air quality targets (last %d days)", window_days),
-       subtitle = paste0("Data through: ", as.Date(end_dt), " | Generated: ", format(Sys.time(), tz="GMT")),
-       x = "Datetime (GMT)", y = "Observation")
-
-ggsave(
-  sprintf("outputs/milestone3_targets_last%dd_%s.png", window_days, Sys.Date()),
-  p_targets, width = 14, height = 10
-)
+viz_target_time_series(targets, window_days, start_dt, end_dt)
 
 # visualization - drivers time series
-p_met <- met %>%
-  ggplot(aes(x = date, y = value, group = site_id)) +
-  geom_line(alpha = 0.6) +
-  facet_grid(variable ~ site_id, scales = "free_y") +
-  labs(title = "Urban meteorological drivers (inputs, example)",
-       x = "Date (GMT)", y = "Value")
-
-ggsave("outputs/milestone3_drivers_timeseries.png", p_met, width = 14, height = 8)
+viz_drivers_time_series(targets)
 
 message("Milestone 3 plots saved to outputs/.")
