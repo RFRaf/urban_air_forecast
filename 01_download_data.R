@@ -124,6 +124,29 @@ viz_avg_drivers_time_series <- function(met) {
   ggsave("outputs/milestone3_drivers_avg_timeseries.png", p_met, width = 14, height = 8)
 }
 
+# Visualize cumulative precipitation over time
+# @return visualization in .png
+viz_cumulative_precip <- function(met) {
+  
+  met_cum <- met %>%
+    filter(variable == "precipitation_sum") %>%
+    group_by(date) %>%
+    summarise(value = mean(value, na.rm = TRUE),
+              .groups = "drop") %>%
+    arrange(date) %>%
+    mutate(cumulative_precip = cumsum(value))
+  
+  p_met <- met_cum %>%
+    ggplot(aes(x = date, y = cumulative_precip)) +
+    geom_line(alpha = 0.8) +
+    labs(
+      title = "Cumulative Precipitation Over Time",
+      x = "Date (GMT)", y = "Cumulative Precipitation") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+  
+  ggsave("outputs/milestone3_cumulative_precip.png", p_met, width = 14,height = 8)
+}
+
 
 
 

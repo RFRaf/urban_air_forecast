@@ -67,4 +67,7 @@ viz_drivers_time_series(targets)
 
 #visualization - avergae time series
 viz_avg_drivers_time_series
+
+#visualization - precipitation time series
+viz_cumulative_precip
 message("Milestone 3 plots saved to outputs/.")
