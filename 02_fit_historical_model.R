@@ -1,3 +1,6 @@
+
+# 0. setup -------------------------------------------------------
+
 library(tidyverse)
 library(lubridate)
 library(httr)
@@ -10,7 +13,7 @@ if (file.exists("01_download_data.R")) source("01_download_data.R")
 dir.create("outputs", showWarnings = FALSE)
 dir.create("outputs/milestone5", recursive = TRUE, showWarnings = FALSE)
 
-# download historical weather for one site
+# 1. download historical weather for one site --------------------
 download_met_history_one_site <- function(site_meta_one, start_date, end_date) {
   lat <- site_meta_one$site_lat[1]
   lon <- site_meta_one$site_long[1]
@@ -41,7 +44,7 @@ download_met_history_one_site <- function(site_meta_one, start_date, end_date) {
   )
 }
 
-#  load targets and choose site
+# 2. load targets and choose site ---------------------------------
 
 targets <- download_targets(window_days = 3650) %>%
   mutate(date = as.Date(datetime))
@@ -76,7 +79,7 @@ end_date   <- max(pm25_site$date, na.rm = TRUE)
 
 met_site <- download_met_history_one_site(site_meta, start_date, end_date)
 
-# 3. join data
+# 3. join data -----------------------------------------------------
 dat <- pm25_site %>%
   left_join(met_site, by = c("site_id", "date")) %>%
   arrange(date) %>%
@@ -99,25 +102,29 @@ if (nrow(dat) < 40) {
 
 N <- nrow(dat)
 
+# 4. Bayesian state-space model -----------------------------------
 
-# 4. Bayesian state-space model
 # latent state x[t] is log(PM2.5 + 1)
 code <- nimbleCode({
-  alpha       ~ dnorm(0, sd = 3)
-  phi         ~ dunif(-0.99, 0.99)
+  alpha_0     ~ dnorm(0, sd = 3)
+  alpha_1     ~ dnorm(0, sd = 1)
+  alpha_2     ~ dnorm(0, sd = 1)
   beta_temp   ~ dnorm(0, sd = 1)
   beta_wind   ~ dnorm(0, sd = 1)
   beta_precip ~ dnorm(0, sd = 1)
   
-  sigma_proc ~ dunif(0, 3)
-  sigma_obs  ~ dunif(0, 3)
+  sigma_proc ~ dgamma(1, 1)
+  sigma_obs  ~ dgamma(1, 1)
   
   x[1] ~ dnorm(y0, sd = 1)
+  x[2] ~ dnorm(y1, sd = 1)
   y[1] ~ dnorm(x[1], sd = sigma_obs)
+  y[2] ~ dnorm(x[2], sd = sigma_obs)
   
-  for (t in 2:N) {
-    mu_x[t] <- alpha +
-      phi * x[t - 1] +
+  for (t in 3:N) {
+    mu_x[t] <- alpha_0 +
+      alpha_1 * x[t - 1] +
+      alpha_2 * x[t - 2] +
       beta_temp * temp_z[t] +
       beta_wind * wind_z[t] +
       beta_precip * precip_z[t]
@@ -130,6 +137,7 @@ code <- nimbleCode({
 constants <- list(
   N = N,
   y0 = dat$y[1],
+  y1 = dat$y[2],
   temp_z = dat$temp_z,
   wind_z = dat$wind_z,
   precip_z = dat$precip_z
@@ -141,8 +149,9 @@ data_list <- list(
 
 inits <- function() {
   list(
-    alpha = 0,
-    phi = 0.5,
+    alpha_0 = 0,
+    alpha_1 = 0,
+    alpha_2 = 0,
     beta_temp = 0,
     beta_wind = 0,
     beta_precip = 0,
@@ -183,7 +192,7 @@ samples <- runMCMC(
   WAIC = FALSE
 )
 
-# 5. save outputs
+# 5. save outputs -------------------------------------------------
 prefix <- file.path(
   "outputs", "milestone5",
   paste0("pm25_", site_id, "_", Sys.Date())
