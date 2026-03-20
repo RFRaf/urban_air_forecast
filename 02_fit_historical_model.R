@@ -108,23 +108,19 @@ N <- nrow(dat)
 code <- nimbleCode({
   alpha_0     ~ dnorm(0, sd = 3)
   alpha_1     ~ dnorm(0, sd = 1)
-  alpha_2     ~ dnorm(0, sd = 1)
   beta_temp   ~ dnorm(0, sd = 1)
   beta_wind   ~ dnorm(0, sd = 1)
   beta_precip ~ dnorm(0, sd = 1)
   
-  sigma_proc ~ dgamma(1, 1)
-  sigma_obs  ~ dgamma(1, 1)
+  sigma_proc ~ dgamma(2, 2)
+  sigma_obs  ~ dgamma(2, 2)
   
   x[1] ~ dnorm(y0, sd = 1)
-  x[2] ~ dnorm(y1, sd = 1)
   y[1] ~ dnorm(x[1], sd = sigma_obs)
-  y[2] ~ dnorm(x[2], sd = sigma_obs)
-  
-  for (t in 3:N) {
+
+  for (t in 2:N) {
     mu_x[t] <- alpha_0 +
       alpha_1 * x[t - 1] +
-      alpha_2 * x[t - 2] +
       beta_temp * temp_z[t] +
       beta_wind * wind_z[t] +
       beta_precip * precip_z[t]
@@ -137,7 +133,6 @@ code <- nimbleCode({
 constants <- list(
   N = N,
   y0 = dat$y[1],
-  y1 = dat$y[2],
   temp_z = dat$temp_z,
   wind_z = dat$wind_z,
   precip_z = dat$precip_z
@@ -151,12 +146,11 @@ inits <- function() {
   list(
     alpha_0 = 0,
     alpha_1 = 0,
-    alpha_2 = 0,
     beta_temp = 0,
     beta_wind = 0,
     beta_precip = 0,
-    sigma_proc = 0.2,
-    sigma_obs = 0.2,
+    sigma_proc = 1,
+    sigma_obs = 1,
     x = dat$y + rnorm(N, 0, 0.05)
   )
 }
@@ -173,7 +167,7 @@ cmodel <- compileNimble(model)
 conf <- configureMCMC(
   model,
   monitors = c(
-    "alpha_0", "alpha_1", "alpha_2",
+    "alpha_0", "alpha_1",
     "beta_temp", "beta_wind", "beta_precip",
     "sigma_proc", "sigma_obs", "x"
   )
@@ -205,7 +199,7 @@ write_csv(dat, paste0(prefix, "_fit_data.csv"))
 mat <- do.call(rbind, lapply(samples, as.matrix))
 
 monitor_pars <- c(
-  "alpha_0", "alpha_1", "alpha_2",
+  "alpha_0", "alpha_1",
   "beta_temp", "beta_wind", "beta_precip",
   "sigma_proc", "sigma_obs"
 )
