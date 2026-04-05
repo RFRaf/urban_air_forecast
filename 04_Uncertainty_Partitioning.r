@@ -26,8 +26,8 @@ ggplot(uncertainty_time, aes(x = datetime)) +
   geom_line(aes(y = mu_t)) +
   geom_ribbon(
     aes(
-      ymin = mu_t - sqrt(var_within),
-      ymax = mu_t + sqrt(var_within)
+      ymin = mu_t - sqrt(ensemble_uncertainty),
+      ymax = mu_t + sqrt(ensemble_uncertainty)
     ),
     alpha = 0.3
   ) +
