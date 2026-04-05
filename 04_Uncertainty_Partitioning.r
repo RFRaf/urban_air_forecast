@@ -37,7 +37,16 @@ ggplot(uncertainty_time, aes(x = datetime)) +
   ) +
   theme_minimal()
 
-ggplot(uncertainty_decomp, aes(x = component, y = variance, fill = component)) +
-  geom_col() +
-  labs(title = "Uncertainty Partitioning") +
+V_rel <- uncertainty_time %>%
+  mutate(var_total = var_IC + ensemble_uncertainty) %>%
+  mutate(
+    prop_IC = var_IC / var_total,
+    prop_ensemble = ensemble_uncertainty / var_total
+  )
+
+ggplot(V_rel, aes(x = datetime)) +
+  geom_area(aes(y = prop_IC + prop_ensemble), fill = "steelblue", alpha = 0.5) +
+  geom_area(aes(y = prop_IC), fill = "tomato", alpha = 0.7) +
+  labs(title = "Relative Variance Partitioning Over Time",
+       y = "Proportion of Variance", x = "Datetime") +
   theme_minimal()
