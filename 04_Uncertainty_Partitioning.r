@@ -47,6 +47,8 @@ V_rel <- uncertainty_time %>%
 ggplot(V_rel, aes(x = datetime)) +
   geom_area(aes(y = prop_IC + prop_ensemble), fill = "steelblue", alpha = 0.5) +
   geom_area(aes(y = prop_IC), fill = "tomato", alpha = 0.7) +
-  labs(title = "Relative Variance Partitioning Over Time",
-       y = "Proportion of Variance", x = "Datetime") +
+  labs(
+    title = "Relative Variance Partitioning Over Time",
+    y = "Proportion of Variance", x = "Datetime"
+  ) +
   theme_minimal()
