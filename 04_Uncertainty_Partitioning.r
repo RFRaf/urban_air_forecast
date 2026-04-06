@@ -1,6 +1,14 @@
 library(tidyverse)
 
-forecast <- read_csv("outputs/milestone6_like/ALL_ref_2026-04-05_20260405T212408Z_forecast_ALLSITES.csv")
+most_recent_forecast <- list.files(
+  "outputs/milestone6_like",
+  "ALL_ref_.*_forecast_ALLSITES.csv",
+  full.names = TRUE
+) |>
+  sort(decreasing = TRUE) |>
+  head(1)
+
+forecast <- read_csv(most_recent_forecast)
 
 uncertainty_time <- forecast %>%
   group_by(datetime) %>%
