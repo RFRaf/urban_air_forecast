@@ -31,7 +31,27 @@ SAVE_FORECAST_CSV <- tolower(Sys.getenv("SAVE_FORECAST_CSV", "true")) == "true"
 SAVE_ANALYSIS_CSV <- tolower(Sys.getenv("SAVE_ANALYSIS_CSV", "true")) == "true"
 ##### Debug #####
 SKIP_FORECAST <- tolower(Sys.getenv("SKIP_FORECAST", "false")) == "true"
-###############
+
+# Turn remote restart on automatically in GitHub Actions unless explicitly overridden
+DEFAULT_REMOTE_RESTART <- if (tolower(Sys.getenv("GITHUB_ACTIONS", "false")) == "true") "true" else "false"
+USE_REMOTE_RESTART <- tolower(Sys.getenv("USE_REMOTE_RESTART", DEFAULT_REMOTE_RESTART)) == "true"
+SAVE_REMOTE_RESTART <- tolower(Sys.getenv("SAVE_REMOTE_RESTART", ifelse(USE_REMOTE_RESTART, "true", "false"))) == "true"
+
+# Persisted restart-state location (deterministic filenames by site/date)
+RESTART_READ_BASE_URL <- Sys.getenv(
+  "RESTART_READ_BASE_URL",
+  "https://minio-s3.apps.shift.nerc.mghpcc.org/bu4cast-ci-write/challenges/project_id=bu4cast/restarts/urban_air_forecast"
+)
+RESTART_WRITE_BASE_URL <- Sys.getenv(
+  "RESTART_WRITE_BASE_URL",
+  RESTART_READ_BASE_URL
+)
+
+# Historical posterior remote location (canonical file path; no listing needed)
+# Recommended example:
+# HIST_MCMC_REMOTE_TEMPLATE=https://.../historical_posteriors/{site_id}/mcmc.rds
+HIST_MCMC_REMOTE_TEMPLATE <- Sys.getenv("HIST_MCMC_REMOTE_TEMPLATE", "")
+HIST_MCMC_REMOTE_URL <- Sys.getenv("HIST_MCMC_REMOTE_URL", "")
 
 set.seed(as.integer(Sys.getenv("DA_SEED", "1")))
 
@@ -65,7 +85,7 @@ summarize_particles <- function(particles, site_id, date, model_id = MODEL_ID) {
   tibble(
     model_id = model_id,
     site_id = site_id,
-    datetime = as.POSIXct(date, tz = "GMT"),
+    datetime = as.POSIXct(as.Date(date), tz = "GMT"),
     variable = "PM2.5",
     mean = mean(pmax(expm1(particles$x), 0), na.rm = TRUE),
     sd = sd(pmax(expm1(particles$x), 0), na.rm = TRUE),
@@ -78,8 +98,8 @@ summarize_particles <- function(particles, site_id, date, model_id = MODEL_ID) {
 particles_to_analysis_df <- function(particles, site_id, reference_date, model_id = MODEL_ID) {
   tibble(
     model_id = model_id,
-    reference_datetime = as.POSIXct(reference_date, tz = "GMT"),
-    datetime = as.POSIXct(reference_date, tz = "GMT"),
+    reference_datetime = as.POSIXct(as.Date(reference_date), tz = "GMT"),
+    datetime = as.POSIXct(as.Date(reference_date), tz = "GMT"),
     site_id = site_id,
     variable = "PM2.5",
     family = "ensemble",
@@ -87,6 +107,83 @@ particles_to_analysis_df <- function(particles, site_id, reference_date, model_i
     prediction = pmax(expm1(particles$x), 0)
   )
 }
+
+latest_file_or_null <- function(files) {
+  if (length(files) == 0) return(NULL)
+  files[order(file.info(files)$mtime, decreasing = TRUE)][1]
+}
+
+serialize_to_rds_raw <- function(obj) {
+  con <- rawConnection(raw(0), open = "wb")
+  on.exit(close(con), add = TRUE)
+  saveRDS(obj, con)
+  rawConnectionValue(con)
+}
+
+read_rds_raw <- function(raw_obj) {
+  con <- rawConnection(raw_obj, open = "rb")
+  on.exit(close(con), add = TRUE)
+  readRDS(con)
+}
+
+http_get_rds_or_null <- function(url) {
+  res <- try(httr::GET(url), silent = TRUE)
+  if (inherits(res, "try-error")) return(NULL)
+  if (httr::status_code(res) != 200) return(NULL)
+  raw_obj <- httr::content(res, as = "raw")
+  read_rds_raw(raw_obj)
+}
+
+http_put_rds <- function(url, obj) {
+  raw_obj <- serialize_to_rds_raw(obj)
+  res <- httr::PUT(
+    url,
+    body = raw_obj,
+    httr::add_headers(`Content-Type` = "application/octet-stream")
+  )
+  httr::status_code(res)
+}
+
+analysis_state_filename <- function(site_id, reference_date) {
+  file.path(OUT_DIR, paste0("analysis_", site_id, "_", as.character(as.Date(reference_date)), ".rds"))
+}
+
+analysis_summary_filename <- function(site_id, reference_date) {
+  file.path(OUT_DIR, paste0("analysis_", site_id, "_", as.character(as.Date(reference_date)), "_summary.csv"))
+}
+
+analysis_ensemble_filename <- function(site_id, reference_date) {
+  file.path(OUT_DIR, paste0("analysis_", site_id, "_", as.character(as.Date(reference_date)), "_ensemble.csv"))
+}
+
+forecast_filename <- function(site_id, reference_date) {
+  file.path(OUT_DIR, paste0("forecast_", site_id, "_ref_", as.character(as.Date(reference_date)), ".csv"))
+}
+
+restart_read_url <- function(site_id, reference_date) {
+  paste0(
+    sub("/$", "", RESTART_READ_BASE_URL),
+    "/", site_id,
+    "/analysis_", as.character(as.Date(reference_date)), ".rds"
+  )
+}
+
+restart_write_url <- function(site_id, reference_date) {
+  paste0(
+    sub("/$", "", RESTART_WRITE_BASE_URL),
+    "/", site_id,
+    "/analysis_", as.character(as.Date(reference_date)), ".rds"
+  )
+}
+
+historical_mcmc_remote_url <- function(site_id) {
+  if (nzchar(HIST_MCMC_REMOTE_URL)) return(HIST_MCMC_REMOTE_URL)
+  if (nzchar(HIST_MCMC_REMOTE_TEMPLATE)) {
+    return(gsub("\\{site_id\\}", site_id, HIST_MCMC_REMOTE_TEMPLATE))
+  }
+  NULL
+}
+
 
 download_met_history_one_site <- function(site_meta_one, start_date, end_date) {
   lat <- site_meta_one$site_lat[1]
@@ -179,19 +276,38 @@ get_sites_to_run <- function(pm25_all) {
 }
 
 # posterior helppers
-latest_file_or_null <- function(files) {
-  if (length(files) == 0) return(NULL)
-  files[order(file.info(files)$mtime, decreasing = TRUE)][1]
+load_latest_historical_mcmc_local <- function(site_id, hist_dir = HIST_DIR) {
+  patt <- paste0("pm25_", site_id, ".*_mcmc\\.rds$")
+  f <- latest_file_or_null(list.files(hist_dir, pattern = patt, full.names = TRUE, recursive = TRUE))
+  if (is.null(f)) return(NULL)
+  readRDS(f)
+}
+
+load_latest_historical_mcmc_remote <- function(site_id) {
+  url <- historical_mcmc_remote_url(site_id)
+  if (is.null(url) || !nzchar(url)) return(NULL)
+  http_get_rds_or_null(url)
 }
 
 load_latest_historical_mcmc <- function(site_id, hist_dir = HIST_DIR) {
-  patt <- paste0("pm25_", site_id, ".*_mcmc\\.rds$")
-  f <- latest_file_or_null(list.files(hist_dir, pattern = patt, full.names = TRUE, recursive = TRUE))
-  if (is.null(f)) {
-    stop("Cannot find historical MCMC for site ", site_id,
-         ". Run milestone 5 first or point HIST_DIR to the right folder.")
+  # local first for local testing
+  local_obj <- load_latest_historical_mcmc_local(site_id, hist_dir)
+  if (!is.null(local_obj)) {
+    message("Loaded historical MCMC locally for ", site_id)
+    return(local_obj)
   }
-  readRDS(f)
+  
+  # remote fallback for automation
+  remote_obj <- load_latest_historical_mcmc_remote(site_id)
+  if (!is.null(remote_obj)) {
+    message("Loaded historical MCMC from remote storage for ", site_id)
+    return(remote_obj)
+  }
+  
+  stop(
+    "Cannot find historical MCMC for site ", site_id, ". ",
+    "Either provide it locally under HIST_DIR or set HIST_MCMC_REMOTE_TEMPLATE / HIST_MCMC_REMOTE_URL."
+  )
 }
 
 extract_particles_from_historical_mcmc <- function(samples, n_particles, n_obs) {
@@ -207,38 +323,77 @@ extract_particles_from_historical_mcmc <- function(samples, n_particles, n_obs) 
   out
 }
 
-analysis_state_filename <- function(site_id, reference_date) {
-  file.path(OUT_DIR, paste0("analysis_", site_id, "_", as.character(reference_date), ".rds"))
-}
 
-analysis_summary_filename <- function(site_id, reference_date) {
-  file.path(OUT_DIR, paste0("analysis_", site_id, "_", as.character(reference_date), "_summary.csv"))
-}
-
-forecast_filename <- function(site_id, reference_date) {
-  file.path(OUT_DIR, paste0("forecast_", site_id, "_ref_", as.character(reference_date), ".csv"))
-}
-
-load_previous_analysis_if_available <- function(site_id, reference_date) {
+load_previous_analysis_local <- function(site_id, reference_date) {
   patt <- paste0("analysis_", site_id, "_(\\d{4}-\\d{2}-\\d{2})\\.rds$")
   files <- list.files(OUT_DIR, pattern = patt, full.names = TRUE)
   if (length(files) == 0) return(NULL)
-
+  
   dates_chr <- str_match(basename(files), patt)[, 2]
   dates <- as.Date(dates_chr)
   keep <- which(!is.na(dates) & dates < as.Date(reference_date))
   if (length(keep) == 0) return(NULL)
-
+  
   files <- files[keep]
   dates <- dates[keep]
   f <- files[order(dates, decreasing = TRUE)][1]
   readRDS(f)
 }
 
+load_previous_analysis_remote <- function(site_id, reference_date, earliest_date = CALIB_END_DATE + days(1)) {
+  if (!USE_REMOTE_RESTART) return(NULL)
+  
+  start_date <- as.Date(reference_date) - days(1)
+  end_date <- as.Date(earliest_date)
+  if (is.na(start_date) || is.na(end_date) || start_date < end_date) return(NULL)
+  
+  candidate_dates <- seq(start_date, end_date, by = "-1 day")
+  
+  for (d in candidate_dates) {
+    obj <- http_get_rds_or_null(restart_read_url(site_id, d))
+    if (!is.null(obj)) return(obj)
+  }
+  
+  NULL
+}
+
+save_analysis_remote_if_enabled <- function(particles, site_id, reference_date) {
+  if (!SAVE_REMOTE_RESTART) return(invisible(NULL))
+  
+  status <- try(http_put_rds(restart_write_url(site_id, reference_date), particles), silent = TRUE)
+  if (inherits(status, "try-error") || !status %in% c(200, 201, 204)) {
+    warning(
+      "Failed to upload remote restart state for ", site_id,
+      " on ", reference_date,
+      if (!inherits(status, "try-error")) paste0(". Status: ", status) else ""
+    )
+  } else {
+    message("Uploaded restart state to remote storage for ", site_id, " on ", reference_date)
+  }
+}
+
+load_previous_analysis_if_available <- function(site_id, reference_date) {
+  # automation-safe: remote first
+  prev_remote <- load_previous_analysis_remote(site_id, reference_date)
+  if (!is.null(prev_remote)) {
+    message("Loaded previous analysis from remote storage for ", site_id, " before ", reference_date)
+    return(prev_remote)
+  }
+  
+  # local fallback for interactive testing
+  prev_local <- load_previous_analysis_local(site_id, reference_date)
+  if (!is.null(prev_local)) {
+    message("Loaded previous analysis locally for ", site_id, " before ", reference_date)
+    return(prev_local)
+  }
+  
+  NULL
+}
+
+
 initialize_particles <- function(site_id, reference_date, dat_site) {
   prev <- load_previous_analysis_if_available(site_id, reference_date)
   if (!is.null(prev)) {
-    message("Loaded previous analysis for ", site_id, " before ", reference_date)
     return(prev)
   }
 
@@ -313,7 +468,7 @@ forecast_from_particles <- function(particles, met_fc, site_id, reference_date) 
     ensemble = seq_len(nrow(pm25_pred))
   ) %>%
     mutate(
-      reference_datetime = as.POSIXct(reference_date, tz = "GMT"),
+      reference_datetime = as.POSIXct(as.Date(reference_date), tz = "GMT"),
       variable = "PM2.5",
       family = "ensemble",
       parameter = ensemble,
@@ -399,13 +554,15 @@ run_da_one_site <- function(site_id, targets, site_meta) {
     }
 
     saveRDS(particles, analysis_state_filename(site_id, ref_date))
-
+    save_analysis_remote_if_enabled(particles, site_id, ref_date)
+    
     analysis_summary <- summarize_particles(particles, site_id, ref_date)
     if (SAVE_ANALYSIS_CSV) {
       write_csv(analysis_summary, analysis_summary_filename(site_id, ref_date))
       write_csv(
         particles_to_analysis_df(particles, site_id, ref_date),
-        file.path(OUT_DIR, paste0("analysis_", site_id, "_", ref_date, "_ensemble.csv"))
+        # file.path(OUT_DIR, paste0("analysis_", site_id, "_", ref_date, "_ensemble.csv"))
+        analysis_ensemble_filename(site_id, ref_date)
       )
     }
     out_analysis[[as.character(ref_date)]] <- analysis_summary
@@ -452,7 +609,8 @@ message("ASSIM_START_DATE = ", ASSIM_START_DATE)
 message("ASSIM_END_DATE   = ", ASSIM_END_DATE)
 message("FORECAST_DAYS    = ", FORECAST_DAYS)
 message("N_PARTICLES      = ", N_PARTICLES)
-
+message("USE_REMOTE_RESTART = ", USE_REMOTE_RESTART)
+message("SAVE_REMOTE_RESTART = ", SAVE_REMOTE_RESTART)
 window_days <- as.integer(max(3650, as.numeric(ASSIM_END_DATE - CALIB_END_DATE) + 400))
 
 targets <- download_targets(window_days = window_days) %>%
@@ -476,14 +634,13 @@ results <- compact(results)
 if (length(results) == 0) stop("No sites completed data assimilation.")
 
 analysis_all <- bind_rows(map(results, "analysis"))
-forecast_all <- bind_rows(map(results, "forecast"))
 
 write_csv(analysis_all, file.path(OUT_DIR, "ALL_analysis_summary.csv"))
 
+forecast_all <- bind_rows(map(results, "forecast"))
 if (nrow(forecast_all) > 0) {
   write_csv(forecast_all, file.path(OUT_DIR, "ALL_forecast_ensemble.csv"))
-
-  # Daily forecast summaries
+  
   forecast_summary_all <- forecast_all %>%
     group_by(model_id, reference_datetime, datetime, site_id, variable) %>%
     summarise(
@@ -494,7 +651,7 @@ if (nrow(forecast_all) > 0) {
       q97.5 = quantile(prediction, 0.975, na.rm = TRUE),
       .groups = "drop"
     )
-
+  
   write_csv(forecast_summary_all, file.path(OUT_DIR, "ALL_forecast_summary.csv"))
 } else {
   message("SKIP_FORECAST=true or no forecast rows returned; skipping forecast aggregation.")
