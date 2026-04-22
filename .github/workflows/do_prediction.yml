@@ -34,16 +34,6 @@ jobs:
           path: outputs/milestone5/**
           if-no-files-found: error
 
-      - name: Run milestone 6 fit and forecast
-        run: Rscript Main_milestone6.R
-
-      - name: Upload milestone 6 outputs
-        uses: actions/upload-artifact@v4
-        with:
-          name: milestone6-outputs
-          path: outputs/milestone6_like/**
-          if-no-files-found: error
-
       - name: Run milestone 8 data assimilation
         run: Rscript Main_milestone8.R
 
