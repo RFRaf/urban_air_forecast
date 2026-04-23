@@ -44,9 +44,9 @@ write.csv(sum_stats, temp_file, row.names = FALSE)
 # ---- submit to S3 bucket ----
 # create filename
 challenge_name <- 'urban'
-team_name <-  'urban_ee585_sp26'
+team_name <-  'air_quality_team_ee585_sp26'
 fname <- gsub("outputs/data_assimilation/", "", most_recent_forecast)
-url <- paste0("https://minio-s3.apps.shift.nerc.mghpcc.org/bu4cast-ci-write/challenges/project_id=bu4cast/forecasts/", challenge_name, "/",team_name, "_", fname, "-submission.csv")
+url <- paste0("https://minio-s3.apps.shift.nerc.mghpcc.org/bu4cast-ci-write/challenges/project_id=bu4cast/submissions/", challenge_name, "-",team_name, "-", fname, "-submission.csv")
 
 # write to bucket
 res <- PUT(url, body = upload_file(temp_file))
